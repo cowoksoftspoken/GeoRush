@@ -1,0 +1,42 @@
+{
+  "rules": {
+    "rooms": {
+      "$roomCode": {
+        ".read": true,
+        ".write": "auth != null && (!data.exists() || data.child('meta').child('host').val() === auth.uid)",
+        "meta": {
+          ".write": "auth != null && (!data.exists() || data.child('host').val() === auth.uid || root.child('rooms').child($roomCode).child('players').child(auth.uid).exists())",
+          ".validate": "newData.hasChildren(['host', 'status', 'currentRound', 'totalRounds', 'roundDurationSeconds', 'createdAt'])"
+        },
+        "locations": {
+          ".write": "auth != null && (!data.exists() || root.child('rooms').child($roomCode).child('meta').child('host').val() === auth.uid)"
+        },
+        "players": {
+          "$uid": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('rooms').child($roomCode).child('meta').child('host').val() === auth.uid)",
+            ".validate": "newData.hasChildren(['nickname', 'joinedAt', 'color', 'totalScore'])"
+          }
+        },
+        "rounds": {
+          "$roundIndex": {
+            ".write": "auth != null && root.child('rooms').child($roomCode).child('meta').child('host').val() === auth.uid",
+            "guesses": {
+              "$uid": {
+                ".write": "auth != null && auth.uid === $uid && !data.exists()",
+                ".validate": "newData.hasChildren(['lat', 'lng', 'lockedAt'])"
+              }
+            }
+          }
+        }
+      }
+    },
+    "leaderboard": {
+      ".read": true,
+      ".indexOn": ["bestScore", "averageScore", "wins", "lastPlayedAt"],
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['uid', 'nickname', 'bestScore', 'lastScore', 'totalScore', 'gamesPlayed', 'averageScore', 'wins', 'roundsPlayed', 'lastPlayedAt']) && newData.child('uid').val() === $uid"
+      }
+    }
+  }
+}
