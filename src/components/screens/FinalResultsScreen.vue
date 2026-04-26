@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { store, isHost, sortedLeaderboard, resetStore } from '../../store'
+import { store, isHost, sortedLeaderboard, resetStore, updateStats } from '../../store'
 import { auth, db, dbRef, onValue, resetRoom, leaveRoom, recordGameResult } from '../../firebase'
 import type { Unsubscribe } from '../../firebase'
 import type { PlayerData, RoomMeta } from '../../types'
@@ -169,6 +169,26 @@ async function maybeRecordGlobalLeaderboard() {
 
 
 onMounted(() => {
+  // Update local persistent stats
+  const me = store.players[store.myUid]
+  if (me) {
+    const roundScores = Object.values(me.scores || {})
+    const totalPoints = me.totalScore
+    const bestScore = Math.max(...roundScores, 0)
+    
+    // Estimate distance based on score: 5000 = 0km, 0 = 2500km
+    const gameDistances = roundScores.map(score => Math.max((5000 - score) / 2, 0))
+    const totalDistance = gameDistances.reduce((a, b) => a + b, 0)
+    
+    updateStats({
+      gamesPlayed: store.stats.gamesPlayed + 1,
+      totalPoints: store.stats.totalPoints + totalPoints,
+      bestScore: Math.max(store.stats.bestScore, bestScore),
+      totalDistance: store.stats.totalDistance + totalDistance,
+      guessCount: store.stats.guessCount + roundScores.length
+    })
+  }
+
   const code = store.roomCode
 
   const metaRef = dbRef(db, `rooms/${code}/meta`)
@@ -333,7 +353,7 @@ function getPodiumEmoji(place: number): string {
 .final__overlay {
   position: fixed;
   inset: 0;
-  background: var(--bg-deep);
+  background-color: var(--background);
 }
 
 .final__confetti {
@@ -358,30 +378,21 @@ function getPodiumEmoji(place: number): string {
 }
 
 .final__title {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 64px;
+  font-family: var(--font-sans);
+  font-size: 3rem;
+  font-weight: 800;
   text-align: center;
   margin: 0;
-  background: linear-gradient(135deg, var(--accent-gold), #fff 50%, var(--accent-gold));
-  background-size: 200% 200%;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  animation: shimmer 4s ease-in-out infinite;
-  letter-spacing: 4px;
-}
-
-@keyframes shimmer {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+  color: var(--foreground);
+  letter-spacing: -0.05em;
 }
 
 .final__subtitle {
   text-align: center;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 16px;
-  color: var(--text-secondary);
-  margin: 8px 0 40px;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  color: var(--muted-foreground);
+  margin: 0.5rem 0 2.5rem;
 }
 
 
@@ -428,42 +439,43 @@ function getPodiumEmoji(place: number): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 24px;
-  color: var(--bg-deep);
-  border: 3px solid rgba(255, 255, 255, 0.2);
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 1.25rem;
+  color: var(--background);
+  border: 3px solid var(--border);
 }
 
 .podium__avatar--first {
-  width: 60px;
-  height: 60px;
-  font-size: 30px;
-  border-color: var(--accent-gold);
-  box-shadow: 0 0 20px rgba(245, 200, 66, 0.3);
+  width: 64px;
+  height: 64px;
+  font-size: 1.5rem;
+  border-color: var(--primary);
+  box-shadow: 0 0 20px rgba(250, 250, 250, 0.1);
 }
 
 .podium__name {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 14px;
-  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  color: var(--foreground);
   font-weight: 500;
   text-align: center;
 }
 
 .podium__name--first {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 700;
 }
 
 .podium__pts {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
 }
 
 .podium__pts--first {
-  color: var(--accent-gold);
-  font-size: 14px;
+  color: var(--primary);
+  font-size: 0.875rem;
 }
 
 .podium__bar {
@@ -474,8 +486,9 @@ function getPodiumEmoji(place: number): string {
   justify-content: center;
   gap: 4px;
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  background: linear-gradient(180deg, var(--podium-color), rgba(0, 0, 0, 0.3));
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: var(--podium-color);
+  opacity: 0.2;
+  border: 1px solid var(--border);
   border-bottom: none;
   animation: podiumGrow 0.6s ease-out both;
 }
@@ -505,48 +518,49 @@ function getPodiumEmoji(place: number): string {
 }
 
 .podium__place {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 18px;
-  color: rgba(0, 0, 0, 0.6);
-  letter-spacing: 1px;
+  font-family: var(--font-sans);
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--background);
+  letter-spacing: 0.05em;
 }
 
-
 .final__leaderboard {
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  background-color: var(--card);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 24px;
-  margin-bottom: 32px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
 }
 
 .final__lb-title {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 22px;
-  color: var(--text-secondary);
-  margin: 0 0 16px;
-  letter-spacing: 1.5px;
+  font-family: var(--font-sans);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0 0 1rem;
 }
 
 .lb-header {
   display: grid;
   grid-template-columns: 40px 1fr 100px 100px;
   gap: 8px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border-subtle);
-  font-family: 'DM Sans', sans-serif;
-  font-size: 11px;
-  color: var(--text-muted);
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.05em;
 }
 
 .lb-entry {
   display: grid;
   grid-template-columns: 40px 1fr 100px 100px;
   gap: 8px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.625rem 0;
+  border-bottom: 1px solid var(--border);
   align-items: center;
 }
 
@@ -555,9 +569,9 @@ function getPodiumEmoji(place: number): string {
 }
 
 .lb-entry__rank {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 14px;
-  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
   text-align: center;
 }
 
@@ -565,9 +579,10 @@ function getPodiumEmoji(place: number): string {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 14px;
-  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--foreground);
 }
 
 .lb-entry__dot {
@@ -578,23 +593,23 @@ function getPodiumEmoji(place: number): string {
 }
 
 .lb-entry__you {
-  color: var(--accent-teal);
-  font-size: 12px;
-  font-weight: 500;
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .lb-entry__score {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 14px;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
   font-weight: 600;
-  color: var(--accent-gold);
+  color: var(--primary);
   text-align: right;
 }
 
 .lb-entry__dist {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
   text-align: right;
 }
 

@@ -127,10 +127,7 @@ async function handleLeave() {
 
 <template>
   <div class="waiting">
-    <div class="waiting__bg">
-      <div class="starfield"></div>
-      <div class="gradient-overlay"></div>
-    </div>
+    <div class="waiting__bg"></div>
 
     <div class="waiting__card">
 
@@ -148,7 +145,8 @@ async function handleLeave() {
         <div class="waiting__code-display" @click="handleCopy">
           <span class="waiting__code">{{ store.roomCode }}</span>
           <button class="waiting__copy-btn">
-            {{ copied ? '✓' : '' }} <i data-lucide="copy" style="width: 14px;"></i> {{ copied ? 'Copied' : 'Copy' }}
+            <i :data-lucide="copied ? 'check' : 'copy'" style="width: 14px; height: 14px;"></i>
+            <span>{{ copied ? 'Copied' : 'Copy' }}</span>
           </button>
         </div>
         <p class="waiting__code-hint">Share this code with friends to join</p>
@@ -166,8 +164,8 @@ async function handleLeave() {
       <div class="waiting__players">
         <TransitionGroup name="player-list" tag="div" class="waiting__player-list">
           <div
-            v-for="player in playerList"
-            :key="player.uid"
+            v-for="(player, idx) in playerList"
+            :key="player.uid || idx"
             class="waiting__player"
           >
             <img v-if="player.photoURL" :src="player.photoURL" alt="" class="waiting__avatar waiting__avatar--photo" />
@@ -179,7 +177,7 @@ async function handleLeave() {
                 {{ player.nickname }}
                 <span v-if="player.isMe" class="waiting__me-badge">You</span>
               </span>
-              <span v-if="player.isHost" class="waiting__host-badge"><i data-lucide="crown" style="width: 14px; height: 14px; vertical-align: middle;"></i> Host</span>
+              <span v-if="player.isHost" class="waiting__host-badge"><span><i data-lucide="crown" style="width: 14px; height: 14px; vertical-align: middle;"></i></span> Host</span>
             </div>
           </div>
         </TransitionGroup>
@@ -220,61 +218,25 @@ async function handleLeave() {
 .waiting__bg {
   position: absolute;
   inset: 0;
-  background: var(--bg-deep);
-  overflow: hidden;
-}
-
-.starfield {
-  position: absolute;
-  inset: 0;
-}
-
-.starfield::before {
-  content: '';
-  position: absolute;
-  width: 2px;
-  height: 2px;
-  border-radius: 50%;
-  box-shadow:
-    40vw 10vh 0 0 rgba(255,255,255,0.3),
-    80vw 20vh 0 0 rgba(255,255,255,0.2),
-    20vw 40vh 0 0 rgba(255,255,255,0.4),
-    60vw 60vh 0 0 rgba(255,255,255,0.15),
-    10vw 80vh 0 0 rgba(255,255,255,0.3),
-    90vw 30vh 0 0 rgba(255,255,255,0.25),
-    50vw 50vh 0 0 rgba(255,255,255,0.2),
-    30vw 70vh 0 0 rgba(255,255,255,0.35);
-  animation: drift 80s linear infinite;
-}
-
-@keyframes drift {
-  from { transform: translateY(0) translateX(0); }
-  to { transform: translateY(-30px) translateX(15px); }
-}
-
-.gradient-overlay {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse at 30% 40%, rgba(45, 212, 191, 0.06) 0%, transparent 60%),
-    radial-gradient(ellipse at 70% 70%, rgba(245, 200, 66, 0.05) 0%, transparent 50%);
+  background-color: var(--background);
+  background-image: radial-gradient(circle at 50% -20%, rgba(255,255,255,0.05), transparent 50%);
 }
 
 .waiting__card {
   position: relative;
   z-index: 10;
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  background-color: var(--card);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 40px;
+  padding: 2.5rem;
   max-width: 480px;
   width: 92vw;
-  box-shadow: var(--shadow-deep);
-  animation: cardIn 0.5s ease-out;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  animation: cardIn 0.3s ease-out;
 }
 
 @keyframes cardIn {
-  from { opacity: 0; transform: translateY(20px); }
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -286,35 +248,36 @@ async function handleLeave() {
 }
 
 .waiting__subtitle {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 32px;
-  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--foreground);
   margin: 0;
-  letter-spacing: 2px;
+  letter-spacing: -0.02em;
 }
 
 .waiting__live-indicator {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  color: var(--accent-teal);
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--primary);
   text-transform: uppercase;
-  letter-spacing: 1px;
+  font-weight: 500;
 }
 
 .pulse-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--accent-teal);
+  background-color: var(--primary);
   animation: pulse 1.5s ease-in-out infinite;
   flex-shrink: 0;
 }
 
 .pulse-dot--gold {
-  background: var(--accent-gold);
+  background-color: var(--muted-foreground);
 }
 
 @keyframes pulse {
@@ -328,138 +291,139 @@ async function handleLeave() {
 }
 
 .waiting__code-label {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 12px;
-  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
   text-transform: uppercase;
-  letter-spacing: 1.5px;
-  margin: 0 0 8px;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.5rem;
 }
 
 .waiting__code-display {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
+  gap: 1rem;
+  background-color: var(--secondary);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 16px 24px;
+  padding: 1rem 1.5rem;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 .waiting__code-display:hover {
-  border-color: var(--border-active);
-  background: var(--bg-hover);
+  border-color: var(--ring);
 }
 
 .waiting__code {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 40px;
+  font-family: var(--font-mono);
+  font-size: 2rem;
   font-weight: 700;
-  color: var(--accent-gold);
-  letter-spacing: 12px;
+  color: var(--foreground);
+  letter-spacing: 0.25em;
 }
 
 .waiting__copy-btn {
   background: none;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  font-family: 'DM Sans', sans-serif;
-  font-size: 12px;
-  padding: 6px 12px;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.35rem 0.65rem;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  line-height: 1;
 }
 
 .waiting__copy-btn:hover {
-  color: var(--text-primary);
-  border-color: var(--border-active);
+  color: var(--foreground);
+  border-color: var(--ring);
 }
 
 .waiting__code-hint {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 12px;
-  color: var(--text-muted);
-  margin: 10px 0 0;
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  margin: 0.5rem 0 0;
 }
 
 .waiting__count {
   display: flex;
   align-items: baseline;
   justify-content: center;
-  gap: 4px;
-  margin-bottom: 16px;
-  font-family: 'JetBrains Mono', monospace;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  font-family: var(--font-mono);
 }
 
 .waiting__count-num {
-  font-size: 28px;
+  font-size: 1.5rem;
   font-weight: 700;
-  color: var(--accent-teal);
+  color: var(--foreground);
 }
 
-.waiting__count-sep {
-  font-size: 20px;
-  color: var(--text-muted);
-}
-
+.waiting__count-sep,
 .waiting__count-max {
-  font-size: 20px;
-  color: var(--text-muted);
+  font-size: 1.125rem;
+  color: var(--muted-foreground);
 }
 
 .waiting__count-label {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-left: 6px;
-  font-family: 'DM Sans', sans-serif;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+  margin-left: 0.25rem;
+  font-family: var(--font-sans);
 }
 
 .waiting__players {
-  margin-bottom: 24px;
+  margin-bottom: 1.5rem;
 }
 
 .waiting__player-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .waiting__player {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  transition: all 0.3s ease;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background-color: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: background-color 0.2s ease;
 }
 
 .waiting__player:hover {
-  background: var(--bg-hover);
+  background-color: rgba(39, 39, 42, 0.8);
 }
 
 .waiting__avatar {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 20px;
-  color: var(--bg-deep);
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  color: var(--background);
+  font-weight: 600;
   flex-shrink: 0;
 }
 
 .waiting__avatar--photo {
   object-fit: cover;
-  border: 2px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--border);
 }
 
 .waiting__player-info {
@@ -470,47 +434,46 @@ async function handleLeave() {
 }
 
 .waiting__player-name {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 15px;
-  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  color: var(--foreground);
   font-weight: 500;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .waiting__me-badge {
-  font-size: 10px;
-  background: rgba(45, 212, 191, 0.15);
-  color: var(--accent-teal);
-  padding: 2px 8px;
-  border-radius: 10px;
+  font-size: 0.625rem;
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  padding: 0.125rem 0.375rem;
+  border-radius: 9999px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
   font-weight: 600;
 }
 
 .waiting__host-badge {
-  font-size: 12px;
-  color: var(--accent-gold);
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
 }
 
 .waiting__actions {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 0.75rem;
 }
 
 .waiting__status-text {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 14px;
-  color: var(--text-secondary);
+  gap: 0.5rem;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
   margin: 0;
-  padding: 14px 0;
+  padding: 0.75rem 0;
 }
 
 

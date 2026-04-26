@@ -41,41 +41,34 @@ const { toasts, removeToast } = globalToast
   pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 20px;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
   border-radius: var(--radius-sm);
-  backdrop-filter: blur(20px);
-  font-family: 'DM Sans', sans-serif;
-  font-size: 14px;
+  background-color: var(--card);
+  border: 1px solid var(--border);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
   min-width: 280px;
-  box-shadow: var(--shadow-card);
-  border: 1px solid var(--border-subtle);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  color: var(--foreground);
 }
 
 .toast--success {
-  background: rgba(45, 212, 191, 0.15);
-  color: var(--accent-teal);
-  border-color: rgba(45, 212, 191, 0.3);
+  border-left: 4px solid var(--primary);
 }
 
 .toast--warning {
-  background: rgba(245, 200, 66, 0.15);
-  color: var(--accent-gold);
-  border-color: rgba(245, 200, 66, 0.3);
+  border-left: 4px solid var(--muted-foreground);
 }
 
 .toast--error {
-  background: rgba(244, 63, 94, 0.15);
-  color: var(--accent-danger);
-  border-color: rgba(244, 63, 94, 0.3);
+  border-left: 4px solid var(--destructive);
 }
 
 .toast--info {
-  background: rgba(240, 242, 245, 0.1);
-  color: var(--text-primary);
-  border-color: rgba(240, 242, 245, 0.15);
+  border-left: 4px solid var(--foreground);
 }
 
 .toast__icon {

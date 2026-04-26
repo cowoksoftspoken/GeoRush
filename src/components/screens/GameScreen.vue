@@ -12,6 +12,9 @@ import type { RoomMeta } from '../../types'
 import { formatTime } from '../../utils'
 import { resolveMapillaryLocation } from '../../services/mapillary'
 import { globalToast } from '../../composables/useToast'
+import { useSound } from '../../composables/useSound'
+
+const { playSound } = useSound()
 
 const { showToast } = globalToast
 
@@ -138,7 +141,7 @@ async function recoverStreetView() {
 function initMiniMap() {
   if (!miniMapDiv.value || leafletMap) return
   leafletMap = L.map(miniMapDiv.value, { zoomControl: true, attributionControl: false }).setView([20, 0], 1)
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19
   }).addTo(leafletMap)
 
@@ -197,6 +200,7 @@ async function handleTimerExpiry() {
 
 async function lockGuess() {
   if (guessLocked.value || !hasGuess.value) return
+  playSound('click')
   try {
     await submitGuess(store.roomCode, currentRound.value, store.myUid, guessLat.value!, guessLng.value!)
     guessLocked.value = true
@@ -216,7 +220,10 @@ onMounted(async () => {
     const val = snap.val() as RoomMeta | null
     if (val) {
       store.meta = val
-      if (val.status === 'roundResults') store.screen = 'roundResults'
+      if (val.status === 'roundResults') {
+        playSound('success')
+        store.screen = 'roundResults'
+      }
       else if (val.status === 'gameOver') store.screen = 'finalResults'
     }
   }))
@@ -267,6 +274,7 @@ watch(currentLocation, async (loc, oldLoc) => {
 
 function toggleMap() {
   mapExpanded.value = !mapExpanded.value
+  playSound('transition')
   setTimeout(() => leafletMap?.invalidateSize(), 400)
 }
 </script>
@@ -290,23 +298,17 @@ function toggleMap() {
     <div ref="panoramaDiv" class="game__panorama"></div>
 
 
-    <div class="game__topbar">
-      <div class="topbar__round">
-        <span class="topbar__round-label">Round</span>
-        <span class="topbar__round-value">{{ currentRound + 1 }}</span>
-        <span class="topbar__round-sep">/</span>
-        <span class="topbar__round-total">{{ totalRounds }}</span>
+    <div class="game__hud">
+      <div class="game__hud-left">
+        <div class="hud-pill">
+          <span class="hud-pill__label">Round</span>
+          <span class="hud-pill__value">{{ currentRound + 1 }} / {{ totalRounds }}</span>
+        </div>
       </div>
-      <div :class="['topbar__timer', { 'topbar__timer--pulse': timerPulse }]" :style="{ color: timerColor }">
-        <i data-lucide="clock" class="topbar__timer-icon"></i>
-        <span class="topbar__timer-value">{{ formatTime(timeRemaining) }}</span>
-      </div>
-      <div class="topbar__leaderboard">
-        <div v-for="(player, idx) in top3" :key="player.uid" class="topbar__player">
-          <span class="topbar__rank">{{ idx + 1 }}</span>
-          <span class="topbar__dot" :style="{ backgroundColor: player.color }"></span>
-          <span class="topbar__name">{{ player.nickname }}</span>
-          <span class="topbar__score">{{ player.totalScore.toLocaleString() }}</span>
+      <div class="game__hud-right">
+        <div :class="['hud-pill', 'hud-timer', { 'hud-timer--pulse': timerPulse }]" :style="{ color: timerColor }">
+          <i data-lucide="clock" style="width: 18px; height: 18px;"></i>
+          <span class="hud-timer__value">{{ formatTime(timeRemaining) }}</span>
         </div>
       </div>
     </div>
@@ -346,48 +348,42 @@ function toggleMap() {
 .globe-ring { animation: ringDash 2s ease-in-out infinite; transform-origin: center; }
 @keyframes globeSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes ringDash { 0% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -251; } }
-.game__loader-text { font-family: 'DM Sans', sans-serif; color: var(--text-secondary); font-size: 15px; animation: textPulse 1.5s ease-in-out infinite; }
+.game__loader-text { font-family: var(--font-sans); color: var(--muted-foreground); font-size: 0.875rem; font-weight: 500; animation: textPulse 1.5s ease-in-out infinite; }
 @keyframes textPulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
 
-.game__topbar { position: absolute; top: 0; left: 0; right: 0; z-index: 70; display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; background: rgba(10, 12, 15, 0.75); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-subtle); }
-.topbar__round { display: flex; align-items: baseline; gap: 6px; font-family: 'DM Sans', sans-serif; }
-.topbar__round-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
-.topbar__round-value { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; color: var(--text-primary); }
-.topbar__round-sep { font-size: 16px; color: var(--text-muted); }
-.topbar__round-total { font-family: 'JetBrains Mono', monospace; font-size: 16px; color: var(--text-muted); }
-.topbar__timer { display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; transition: color 0.3s ease; }
-.topbar__timer-icon { font-size: 18px; }
-.topbar__timer-value { font-size: 28px; font-weight: 700; letter-spacing: 2px; }
-.topbar__timer--pulse .topbar__timer-value { animation: timerPulse 0.5s ease-in-out infinite; }
-@keyframes timerPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.05); } }
-.topbar__leaderboard { display: flex; gap: 16px; }
-.topbar__player { display: flex; align-items: center; gap: 6px; font-family: 'DM Sans', sans-serif; font-size: 13px; }
-.topbar__rank { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-muted); width: 16px; text-align: center; }
-.topbar__dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.topbar__name { color: var(--text-secondary); max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.topbar__score { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent-gold); font-weight: 600; }
+.game__hud { position: absolute; top: 0; left: 0; right: 0; z-index: 70; display: flex; align-items: flex-start; justify-content: space-between; padding: 1.5rem; pointer-events: none; }
+.game__hud-left, .game__hud-right { pointer-events: auto; }
+.hud-pill { display: flex; align-items: center; gap: 0.5rem; background-color: var(--card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0.5rem 1rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+.hud-pill__label { font-family: var(--font-sans); font-size: 0.875rem; color: var(--muted-foreground); font-weight: 500; }
+.hud-pill__value { font-family: var(--font-mono); font-size: 1.125rem; font-weight: 700; color: var(--foreground); }
 
-.game__minimap { position: absolute; bottom: 24px; right: 24px; z-index: 70; width: 280px; background: rgba(247, 249, 244, 0.94); backdrop-filter: blur(20px); border: 1px solid rgba(12, 42, 48, 0.18); border-radius: var(--radius-md); overflow: hidden; transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 18px 45px rgba(0, 0, 0, 0.32); }
+.hud-timer { font-family: var(--font-mono); transition: color 0.3s ease; }
+.hud-timer__value { font-size: 1.5rem; font-weight: 700; letter-spacing: 0.05em; }
+.hud-timer--pulse .hud-timer__value { animation: timerPulse 0.5s ease-in-out infinite; color: var(--destructive); }
+@keyframes timerPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.8; transform: scale(1.05); } }
+
+.game__minimap { position: absolute; bottom: 24px; right: 24px; z-index: 70; width: 280px; background-color: var(--card); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
 .game__minimap--expanded { width: min(560px, calc(100vw - 48px)); }
-.minimap__header { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; cursor: pointer; border-bottom: 1px solid rgba(12, 42, 48, 0.12); background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(235, 245, 239, 0.92)); }
-.minimap__title { font-family: 'DM Sans', sans-serif; font-size: 13px; color: #18343a; font-weight: 700; }
-.minimap__toggle { background: rgba(24, 52, 58, 0.08); border: 1px solid rgba(24, 52, 58, 0.1); border-radius: 6px; color: #18343a; cursor: pointer; font-size: 12px; padding: 4px; }
-.minimap__map { width: 100%; height: 220px; transition: height 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.minimap__header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; cursor: pointer; border-bottom: 1px solid var(--border); background-color: var(--secondary); }
+.minimap__title { font-family: var(--font-sans); font-size: 0.875rem; color: var(--foreground); font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
+.minimap__toggle { background: var(--background); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--foreground); cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; transition: background-color 0.15s ease; }
+.minimap__toggle:hover { background-color: var(--accent); }
+.minimap__map { width: 100%; height: 220px; transition: height 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .game__minimap--expanded .minimap__map { height: min(430px, calc(100vh - 220px)); }
-.minimap__actions { padding: 10px 14px; }
-.minimap__lock-btn { width: 100%; font-size: 13px; padding: 10px 16px; }
-.btn--locked { background: rgba(45, 212, 191, 0.15) !important; color: var(--accent-teal) !important; border-color: rgba(45, 212, 191, 0.3) !important; cursor: default !important; }
+.minimap__actions { padding: 0.75rem 1rem; border-top: 1px solid var(--border); }
+.minimap__lock-btn { width: 100%; }
+.btn--locked { background-color: var(--secondary) !important; color: var(--muted-foreground) !important; border-color: var(--border) !important; cursor: default !important; opacity: 0.8 !important; box-shadow: none !important; }
 
-.game__hint { position: absolute; bottom: 24px; left: 24px; z-index: 70; padding: 10px 18px; background: rgba(10, 12, 15, 0.7); backdrop-filter: blur(20px); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); font-family: 'DM Sans', sans-serif; font-size: 13px; color: var(--text-secondary); }
+.game__hint { position: absolute; bottom: 24px; left: 24px; z-index: 70; padding: 0.5rem 1rem; background-color: rgba(9, 9, 11, 0.8); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: 0.75rem; font-weight: 500; color: var(--muted-foreground); }
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.4s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
 @media (max-width: 768px) {
-  .topbar__leaderboard { display: none; }
+  .game__hud { padding: 1rem; }
   .game__minimap { width: 180px; bottom: 16px; right: 16px; }
   .game__minimap--expanded { width: calc(100vw - 32px); }
-  .topbar__timer-value { font-size: 22px; }
+  .hud-timer__value { font-size: 1.25rem; }
   .game__hint { display: none; }
 }
 </style>
