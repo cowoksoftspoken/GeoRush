@@ -2,7 +2,7 @@
 
 
 import { reactive, computed } from 'vue'
-import type { ScreenName, PlayerData, RoomMeta, GeoLocation, RoundData } from '../types'
+import type { ScreenName, PlayerData, RoomMeta, GeoLocation, RoundData, RoundResultData } from '../types'
 
 export interface GameStore {
 
@@ -18,6 +18,7 @@ export interface GameStore {
   players: Record<string, PlayerData>
   locations: Record<string, GeoLocation>
   rounds: Record<string, RoundData>
+  results: Record<string, RoundResultData>
 
 
   screen: ScreenName
@@ -77,6 +78,7 @@ export const store = reactive<GameStore>({
   players: {},
   locations: {},
   rounds: {},
+  results: {},
 
   screen: 'lobby',
   isLoading: false,
@@ -113,6 +115,11 @@ export const totalRounds = computed(() => {
 export const currentLocation = computed((): GeoLocation | null => {
   const round = currentRound.value
   return store.locations[round.toString()] ?? null
+})
+
+export const currentResult = computed((): RoundResultData | null => {
+  const round = currentRound.value
+  return store.results[round.toString()] ?? null
 })
 
 export const currentRoundData = computed((): RoundData | null => {
@@ -178,6 +185,7 @@ export function resetStore(): void {
   store.players = {}
   store.locations = {}
   store.rounds = {}
+  store.results = {}
   store.screen = 'lobby'
   store.isLoading = false
   store.loadingMessage = ''

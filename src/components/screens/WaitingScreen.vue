@@ -2,12 +2,13 @@
 import { onMounted, onUnmounted, computed, ref } from 'vue'
 import { store, isHost, playerCount, resetStore } from '../../store'
 import {
-  db, dbRef, onValue, leaveRoom, startGame
+  db, dbRef, onValue, leaveRoom, startGame, updatePlayerReady
 } from '../../firebase'
 import type { Unsubscribe } from '../../firebase'
 import type { PlayerData, RoomMeta } from '../../types'
 import { globalToast } from '../../composables/useToast'
 import { copyToClipboard } from '../../utils'
+import PlayerAvatar from '../ui/PlayerAvatar.vue'
 
 const { showToast } = globalToast
 
@@ -15,7 +16,10 @@ const unsubs: Unsubscribe[] = []
 const copied = ref(false)
 const isStarting = ref(false)
 
-const canStart = computed(() => isHost.value && playerCount.value >= 2)
+const readyCount = computed(() => Object.values(store.players).filter((player) => player.ready).length)
+const allReady = computed(() => playerCount.value >= 2 && readyCount.value === playerCount.value)
+const canStart = computed(() => isHost.value && allReady.value)
+const myReady = computed(() => Boolean(store.players[store.myUid]?.ready))
 
 const playerList = computed(() => {
   return Object.entries(store.players)
@@ -114,6 +118,14 @@ async function handleStart() {
   }
 }
 
+async function handleReadyToggle() {
+  try {
+    await updatePlayerReady(store.roomCode, store.myUid, !myReady.value)
+  } catch (err) {
+    showToast(`Failed to update ready status: ${(err as Error).message}`, 'error')
+  }
+}
+
 async function handleLeave() {
   try {
     await leaveRoom(store.roomCode, store.myUid)
@@ -157,7 +169,7 @@ async function handleLeave() {
         <span class="waiting__count-num">{{ playerCount }}</span>
         <span class="waiting__count-sep">/</span>
         <span class="waiting__count-max">6</span>
-        <span class="waiting__count-label">players</span>
+        <span class="waiting__count-label">players · {{ readyCount }}/{{ playerCount }} ready</span>
       </div>
 
 
@@ -168,16 +180,15 @@ async function handleLeave() {
             :key="player.uid || idx"
             class="waiting__player"
           >
-            <img v-if="player.photoURL" :src="player.photoURL" alt="" class="waiting__avatar waiting__avatar--photo" />
-            <div v-else class="waiting__avatar" :style="{ backgroundColor: player.color }">
-              {{ player.nickname.charAt(0).toUpperCase() }}
-            </div>
+            <PlayerAvatar :name="player.nickname" :photoURL="player.photoURL" :color="player.color" :is-current="player.isMe" />
             <div class="waiting__player-info">
               <span class="waiting__player-name">
                 {{ player.nickname }}
                 <span v-if="player.isMe" class="waiting__me-badge">You</span>
               </span>
               <span v-if="player.isHost" class="waiting__host-badge"><span><i data-lucide="crown" style="width: 14px; height: 14px; vertical-align: middle;"></i></span> Host</span>
+              <span v-else-if="player.ready" class="waiting__ready-badge">Ready</span>
+              <span v-else class="waiting__not-ready-badge">Not ready</span>
             </div>
           </div>
         </TransitionGroup>
@@ -186,13 +197,21 @@ async function handleLeave() {
 
       <div class="waiting__actions">
         <button
+          class="btn"
+          :class="myReady ? 'btn--secondary' : 'btn--primary'"
+          @click="handleReadyToggle"
+        >
+          <i :data-lucide="myReady ? 'check-circle-2' : 'circle'" style="width: 18px;"></i>
+          {{ myReady ? 'Ready' : 'Mark Ready' }}
+        </button>
+        <button
           v-if="isHost"
           class="btn btn--primary btn--large"
           :disabled="!canStart || isStarting"
           @click="handleStart"
         >
           <span v-if="isStarting" class="btn__spinner"></span>
-          <template v-else-if="!canStart"><i data-lucide="users" style="width: 18px;"></i> Need 2+ players</template>
+          <template v-else-if="!canStart"><i data-lucide="users" style="width: 18px;"></i> Waiting for ready players</template>
           <template v-else><i data-lucide="play" style="width: 18px;"></i> Start Game</template>
         </button>
         <p v-else class="waiting__status-text">
@@ -455,6 +474,24 @@ async function handleLeave() {
 
 .waiting__host-badge {
   font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.waiting__ready-badge,
+.waiting__not-ready-badge {
+  font-size: 0.7rem;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-weight: 700;
+}
+
+.waiting__ready-badge {
+  background: rgba(34, 197, 94, 0.14);
+  color: #86efac;
+}
+
+.waiting__not-ready-badge {
+  background: rgba(255, 255, 255, 0.06);
   color: var(--muted-foreground);
 }
 

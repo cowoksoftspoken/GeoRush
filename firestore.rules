@@ -1,0 +1,37 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function admin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    match /mapPacks/{mapPackId} {
+      allow read: if signedIn() && resource.data.isPublic == true;
+      allow create, update, delete: if admin();
+    }
+
+    match /publicLocations/{locationId} {
+      allow read: if signedIn() && resource.data.isActive == true;
+      allow create, update, delete: if admin();
+    }
+
+    match /privateLocations/{locationId} {
+      allow read: if signedIn();
+      allow create, update, delete: if admin();
+    }
+
+    match /locations/{locationId} {
+      allow read: if false;
+      allow create, update, delete: if admin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

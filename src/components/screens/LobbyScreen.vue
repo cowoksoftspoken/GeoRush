@@ -4,6 +4,7 @@ import { store, achievements, avgDistance, updateSettings } from '../../store'
 import {
   createRoom,
   joinRoom,
+  quickJoinRoom,
   listenGlobalLeaderboard,
   signInWithGoogle,
   signOutUser,
@@ -12,7 +13,7 @@ import {
 import { generateNickname } from '../../utils'
 import { globalToast } from '../../composables/useToast'
 import { useSound } from '../../composables/useSound'
-import type { GlobalLeaderboardEntry } from '../../types'
+import type { GlobalLeaderboardEntry, MatchmakingPreferences } from '../../types'
 
 const { playSound } = useSound()
 
@@ -28,7 +29,28 @@ const joinError = ref('')
 const shakeInput = ref(false)
 const isSigningIn = ref(false)
 const leaderboard = ref<GlobalLeaderboardEntry[]>([])
+const matchmaking = ref<{
+  open: boolean
+  roomCode: string
+  status: 'idle' | 'queued' | 'matched' | 'error'
+  startedAt: number
+  error: string
+}>({
+  open: false,
+  roomCode: '',
+  status: 'idle',
+  startedAt: 0,
+  error: ''
+})
+const preferences = ref<MatchmakingPreferences>({
+  mode: 'duel',
+  region: 'world',
+  difficulty: 'mixed',
+  mapPack: 'world'
+})
+const queueSeconds = ref(0)
 let unsubscribeLeaderboard: Unsubscribe | null = null
+let queueTimer: ReturnType<typeof setInterval> | null = null
 
 const isGoogleSignedIn = computed(() => Boolean(store.myUid && !store.isAnonymous))
 const displayName = computed(() => store.myNickname || 'Player')
@@ -129,6 +151,68 @@ async function handleJoin() {
   }
 }
 
+async function handleQuickPlay() {
+  if (matchmaking.value.status === 'queued') return
+  if (!nickname.value.trim()) {
+    showToast('Please enter a nickname', 'warning')
+    return
+  }
+
+  try {
+    await ensureAuth()
+    matchmaking.value = {
+      open: true,
+      roomCode: '',
+      status: 'queued',
+      startedAt: Date.now(),
+      error: ''
+    }
+    queueSeconds.value = 0
+    queueTimer = setInterval(() => {
+      queueSeconds.value = Math.floor((Date.now() - matchmaking.value.startedAt) / 1000)
+    }, 1000)
+
+    showToast('Searching for players...', 'info')
+    const roomCode = await quickJoinRoom(
+      store.myUid,
+      nickname.value.trim(),
+      store.myPhotoURL,
+      preferences.value
+    )
+    matchmaking.value.status = 'matched'
+    matchmaking.value.roomCode = roomCode
+    clearQueueTimer()
+    store.roomCode = roomCode
+    setTimeout(() => {
+      store.screen = 'waiting'
+    }, 700)
+  } catch (err) {
+    clearQueueTimer()
+    matchmaking.value.open = true
+    matchmaking.value.status = 'error'
+    matchmaking.value.error = (err as Error).message
+  }
+}
+
+function handleCancelQueue(message = 'Matchmaking cancelled') {
+  clearQueueTimer()
+  matchmaking.value = {
+    open: false,
+    roomCode: '',
+    status: 'idle',
+    startedAt: 0,
+    error: ''
+  }
+  showToast(message, 'info')
+}
+
+function clearQueueTimer() {
+  if (queueTimer) {
+    clearInterval(queueTimer)
+    queueTimer = null
+  }
+}
+
 function triggerShake() {
   shakeInput.value = true
   setTimeout(() => (shakeInput.value = false), 500)
@@ -152,6 +236,7 @@ watch([currentTab, mode], async () => {
 
 onUnmounted(() => {
   unsubscribeLeaderboard?.()
+  clearQueueTimer()
 })
 </script>
 
@@ -186,7 +271,7 @@ onUnmounted(() => {
             <div class="play-tab">
               <div class="tab-header">
                 <h2 class="tab-title">Play GeoRush</h2>
-                <p class="tab-subtitle">Test your geography knowledge</p>
+                <p class="tab-subtitle">How well do you know the world?</p>
               </div>
 
               <div class="lobby__field" style="margin-bottom: 2rem;">
@@ -207,6 +292,48 @@ onUnmounted(() => {
               </div>
 
               <div class="play-modes">
+                <div class="matchmaking-panel">
+                  <div class="matchmaking-panel__header">
+                    <div>
+                      <h3 class="matchmaking-panel__title">Quick Play</h3>
+                      <p class="matchmaking-panel__desc">Find compatible players by region, difficulty, and map pack.</p>
+                    </div>
+                    <button class="btn btn--primary" :disabled="matchmaking.status === 'queued'" @click="handleQuickPlay">
+                      <i data-lucide="zap" style="width: 18px;"></i>
+                      {{ matchmaking.status === 'queued' ? 'Finding...' : 'Quick Play' }}
+                    </button>
+                  </div>
+                  <div class="matchmaking-panel__controls">
+                    <label class="match-select">
+                      <span>Region</span>
+                      <select v-model="preferences.region">
+                        <option value="world">World</option>
+                        <option value="asia">Asia</option>
+                        <option value="europe">Europe</option>
+                        <option value="americas">Americas</option>
+                        <option value="oceania">Oceania</option>
+                      </select>
+                    </label>
+                    <label class="match-select">
+                      <span>Difficulty</span>
+                      <select v-model="preferences.difficulty">
+                        <option value="mixed">Mixed</option>
+                        <option value="easy">Easy</option>
+                        <option value="medium">Medium</option>
+                        <option value="hard">Hard</option>
+                      </select>
+                    </label>
+                    <label class="match-select">
+                      <span>Map Pack</span>
+                      <select v-model="preferences.mapPack">
+                        <option value="world">World</option>
+                        <option value="urban">Urban</option>
+                        <option value="landmarks">Landmarks</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
                 <div
                   class="mode-card"
                   :class="{ 'mode-card--loading': isCreating }"
@@ -260,6 +387,23 @@ onUnmounted(() => {
                   </div>
                 </template>
               </div>
+
+              <Transition name="queue">
+                <div v-if="matchmaking.open" class="matchmaking-modal">
+                  <div class="matchmaking-modal__card">
+                    <div class="matchmaking-modal__pulse"></div>
+                    <h3>{{ matchmaking.status === 'matched' ? 'Match found' : matchmaking.status === 'error' ? 'Matchmaking failed' : 'Finding players...' }}</h3>
+                    <p v-if="matchmaking.status === 'queued'">
+                      {{ preferences.region }} · {{ preferences.difficulty }} · {{ preferences.mapPack }}
+                    </p>
+                    <p v-else-if="matchmaking.status === 'matched'">Moving you into the room.</p>
+                    <p v-else>{{ matchmaking.error }}</p>
+                    <div class="matchmaking-modal__time">{{ queueSeconds }}s</div>
+                    <button v-if="matchmaking.status === 'queued'" class="btn btn--secondary" @click="handleCancelQueue()">Cancel Queue</button>
+                    <button v-if="matchmaking.status === 'error'" class="btn btn--primary" @click="matchmaking.open = false">Close</button>
+                  </div>
+                </div>
+              </Transition>
             </div>
           </template>
 
@@ -793,6 +937,117 @@ onUnmounted(() => {
   gap: 1rem;
 }
 
+.matchmaking-panel {
+  padding: 1.25rem;
+  background: rgba(250, 250, 250, 0.06);
+  border: 1px solid rgba(250, 250, 250, 0.12);
+  border-radius: var(--radius-md);
+}
+
+.matchmaking-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.matchmaking-panel__title {
+  margin: 0 0 0.25rem;
+  font-size: 1.125rem;
+}
+
+.matchmaking-panel__desc {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.matchmaking-panel__controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.match-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.match-select select {
+  width: 100%;
+  min-height: 38px;
+  background: rgba(9, 9, 11, 0.7);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.6rem;
+}
+
+.matchmaking-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(10px);
+}
+
+.matchmaking-modal__card {
+  width: min(92vw, 360px);
+  padding: 1.5rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(250, 250, 250, 0.12);
+  background: rgba(9, 9, 11, 0.92);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+
+.matchmaking-modal__pulse {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 1rem;
+  border-radius: 50%;
+  border: 3px solid var(--primary);
+  animation: queuePulse 1.2s ease-in-out infinite;
+}
+
+.matchmaking-modal__card h3 {
+  margin: 0 0 0.5rem;
+}
+
+.matchmaking-modal__card p {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.matchmaking-modal__time {
+  margin: 1rem 0;
+  font-family: var(--font-mono);
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+@keyframes queuePulse {
+  0%, 100% { transform: scale(0.92); opacity: 0.65; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+
+.queue-enter-active,
+.queue-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.queue-enter-from,
+.queue-leave-to {
+  opacity: 0;
+}
+
 .mode-card {
   display: flex;
   align-items: center;
@@ -1287,9 +1542,17 @@ input:checked + .toggle-slider:before {
 }
 
 @media (max-width: 768px) {
+  .lobby {
+    align-items: stretch;
+    justify-content: stretch;
+    min-height: 100dvh;
+    min-height: 100svh;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  }
   .dashboard {
     flex-direction: column;
-    height: 100vh;
+    min-height: 100dvh;
+    height: auto;
     border-radius: 0;
     border: none;
   }
@@ -1312,7 +1575,18 @@ input:checked + .toggle-slider:before {
     font-size: 0.8rem;
   }
   .dashboard__main {
-    padding: 1.5rem 1rem;
+    padding: 1rem;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .matchmaking-panel__header {
+    flex-direction: column;
+  }
+  .matchmaking-panel__header .btn {
+    width: 100%;
+  }
+  .matchmaking-panel__controls {
+    grid-template-columns: 1fr;
   }
   .stats-grid {
     grid-template-columns: 1fr;

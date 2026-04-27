@@ -5,6 +5,7 @@ import { auth, db, dbRef, onValue, resetRoom, leaveRoom, recordGameResult } from
 import type { Unsubscribe } from '../../firebase'
 import type { PlayerData, RoomMeta } from '../../types'
 import { globalToast } from '../../composables/useToast'
+import PlayerAvatar from '../ui/PlayerAvatar.vue'
 
 const { showToast } = globalToast
 
@@ -255,9 +256,7 @@ function getPodiumEmoji(place: number): string {
 
         <div class="podium__slot podium__slot--second" v-if="podiumPlayers.second">
           <div class="podium__player">
-            <div class="podium__avatar" :style="{ backgroundColor: podiumPlayers.second.color }">
-              {{ podiumPlayers.second.nickname.charAt(0).toUpperCase() }}
-            </div>
+            <PlayerAvatar :name="podiumPlayers.second.nickname" :photoURL="podiumPlayers.second.photoURL" :color="podiumPlayers.second.color" size="lg" :is-current="podiumPlayers.second.uid === store.myUid" />
             <span class="podium__name">{{ podiumPlayers.second.nickname }}</span>
             <span class="podium__pts">{{ podiumPlayers.second.totalScore.toLocaleString() }} pts</span>
           </div>
@@ -271,9 +270,7 @@ function getPodiumEmoji(place: number): string {
         <div class="podium__slot podium__slot--first" v-if="podiumPlayers.first">
           <div class="podium__player">
             <div class="podium__crown"><i data-lucide="crown" style="width: 32px; height: 32px; color: #f5c842;"></i></div>
-            <div class="podium__avatar podium__avatar--first" :style="{ backgroundColor: podiumPlayers.first.color }">
-              {{ podiumPlayers.first.nickname.charAt(0).toUpperCase() }}
-            </div>
+            <PlayerAvatar :name="podiumPlayers.first.nickname" :photoURL="podiumPlayers.first.photoURL" :color="podiumPlayers.first.color" size="lg" :is-current="podiumPlayers.first.uid === store.myUid" />
             <span class="podium__name podium__name--first">{{ podiumPlayers.first.nickname }}</span>
             <span class="podium__pts podium__pts--first">{{ podiumPlayers.first.totalScore.toLocaleString() }} pts</span>
           </div>
@@ -286,9 +283,7 @@ function getPodiumEmoji(place: number): string {
 
         <div class="podium__slot podium__slot--third" v-if="podiumPlayers.third">
           <div class="podium__player">
-            <div class="podium__avatar" :style="{ backgroundColor: podiumPlayers.third.color }">
-              {{ podiumPlayers.third.nickname.charAt(0).toUpperCase() }}
-            </div>
+            <PlayerAvatar :name="podiumPlayers.third.nickname" :photoURL="podiumPlayers.third.photoURL" :color="podiumPlayers.third.color" size="lg" :is-current="podiumPlayers.third.uid === store.myUid" />
             <span class="podium__name">{{ podiumPlayers.third.nickname }}</span>
             <span class="podium__pts">{{ podiumPlayers.third.totalScore.toLocaleString() }} pts</span>
           </div>
@@ -316,7 +311,7 @@ function getPodiumEmoji(place: number): string {
           >
             <span class="lb-entry__rank">{{ idx + 1 }}</span>
             <span class="lb-entry__player">
-              <span class="lb-entry__dot" :style="{ backgroundColor: p.color }"></span>
+              <PlayerAvatar :name="p.nickname" :photoURL="p.photoURL" :color="p.color" size="sm" :is-current="p.uid === store.myUid" />
               {{ p.nickname }}
               <span v-if="p.uid === store.myUid" class="lb-entry__you">(You)</span>
             </span>
@@ -345,9 +340,10 @@ function getPodiumEmoji(place: number): string {
   inset: 0;
   z-index: 90;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   overflow-y: auto;
+  padding: calc(28px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));
 }
 
 .final__overlay {
@@ -366,9 +362,9 @@ function getPodiumEmoji(place: number): string {
 .final__content {
   position: relative;
   z-index: 96;
-  max-width: 800px;
-  width: 95vw;
-  padding: 48px 0;
+  max-width: 860px;
+  width: min(100%, 860px);
+  padding: 16px 0 0;
   animation: finalIn 0.6s ease-out;
 }
 
@@ -430,28 +426,6 @@ function getPodiumEmoji(place: number): string {
 @keyframes crownBounce {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-6px); }
-}
-
-.podium__avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-sans);
-  font-weight: 600;
-  font-size: 1.25rem;
-  color: var(--background);
-  border: 3px solid var(--border);
-}
-
-.podium__avatar--first {
-  width: 64px;
-  height: 64px;
-  font-size: 1.5rem;
-  border-color: var(--primary);
-  box-shadow: 0 0 20px rgba(250, 250, 250, 0.1);
 }
 
 .podium__name {
@@ -564,6 +538,14 @@ function getPodiumEmoji(place: number): string {
   align-items: center;
 }
 
+.lb-entry:has(.player-avatar--current) {
+  background: rgba(250, 250, 250, 0.055);
+  margin: 0 -0.75rem;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+  border-radius: var(--radius-sm);
+}
+
 .lb-entry:last-child {
   border-bottom: none;
 }
@@ -583,13 +565,6 @@ function getPodiumEmoji(place: number): string {
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--foreground);
-}
-
-.lb-entry__dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
 }
 
 .lb-entry__you {
@@ -622,15 +597,22 @@ function getPodiumEmoji(place: number): string {
 
 
 @media (max-width: 640px) {
-  .final__title { font-size: 44px; }
+  .final { padding-left: 12px; padding-right: 12px; }
+  .final__title { font-size: 2.4rem; }
+  .final__subtitle { margin-bottom: 1.5rem; }
   .podium { gap: 4px; padding: 0 8px; }
   .podium__bar--first { height: 100px; }
   .podium__bar--second { height: 70px; }
   .podium__bar--third { height: 50px; }
   .lb-header, .lb-entry {
-    grid-template-columns: 30px 1fr 80px 80px;
+    grid-template-columns: 28px minmax(0, 1fr) 74px;
     font-size: 12px;
   }
+  .lb-header__col:last-child,
+  .lb-entry__dist {
+    display: none;
+  }
   .final__actions { flex-direction: column; align-items: center; }
+  .final__actions .btn { width: 100%; }
 }
 </style>

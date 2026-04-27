@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "seed:locations": "node scripts/seed-firestore-locations.mjs"
   },
   "dependencies": {
     "@types/google.maps": "^3.64.0",

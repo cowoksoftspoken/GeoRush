@@ -10,7 +10,6 @@ import { db, dbRef, onValue, submitGuess, advanceToResults, rerollRoundLocation 
 import type { Unsubscribe } from '../../firebase'
 import type { RoomMeta } from '../../types'
 import { formatTime } from '../../utils'
-import { resolveMapillaryLocation } from '../../services/mapillary'
 import { globalToast } from '../../composables/useToast'
 import { useSound } from '../../composables/useSound'
 
@@ -33,7 +32,8 @@ const timeRemaining = ref(90)
 const guessLocked = ref(false)
 const guessLat = ref<number | null>(null)
 const guessLng = ref<number | null>(null)
-const mapExpanded = ref(false)
+const mapMode = ref<'hidden' | 'small' | 'medium' | 'large'>('medium')
+const isMobile = ref(false)
 const showHint = ref(true)
 const svLoading = ref(true)
 
@@ -78,9 +78,7 @@ async function initStreetView() {
       throw new Error('Mapillary library failed to load from CDN')
     }
 
-    const enriched = await resolveMapillaryLocation(loc)
-    Object.assign(loc, enriched)
-    const imageId = enriched.mapillaryId || ''
+    const imageId = loc.mapillaryId || ''
 
     if (!imageId) throw new Error('No Mapillary imagery available for this round')
 
@@ -140,7 +138,8 @@ async function recoverStreetView() {
 
 function initMiniMap() {
   if (!miniMapDiv.value || leafletMap) return
-  leafletMap = L.map(miniMapDiv.value, { zoomControl: true, attributionControl: false }).setView([20, 0], 1)
+  leafletMap = L.map(miniMapDiv.value, { zoomControl: false, attributionControl: false }).setView([20, 0], 1)
+  L.control.zoom({ position: 'bottomright' }).addTo(leafletMap)
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19
   }).addTo(leafletMap)
@@ -160,8 +159,12 @@ function placeGuessPin(lat: number, lng: number) {
     guessMarkerL.setLatLng([lat, lng])
   } else if (leafletMap) {
     guessMarkerL = L.circleMarker([lat, lng], {
-      radius: 10, fillColor: playerColor, fillOpacity: 1,
-      color: '#fff', weight: 2
+      radius: 12,
+      fillColor: playerColor,
+      fillOpacity: 1,
+      color: '#fff',
+      weight: 3,
+      className: 'guess-marker'
     }).addTo(leafletMap)
     if (!guessLocked.value) {
       guessMarkerL?.on('mousedown', () => {
@@ -210,11 +213,14 @@ async function lockGuess() {
 
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'l' || e.key === 'L') lockGuess()
-  else if (e.key === 'm' || e.key === 'M') { mapExpanded.value = !mapExpanded.value; setTimeout(() => leafletMap?.invalidateSize(), 400) }
-  else if (e.key === 'Escape') { mapExpanded.value = false; setTimeout(() => leafletMap?.invalidateSize(), 400) }
+  else if (e.key === 'm' || e.key === 'M') setMapMode(mapMode.value === 'hidden' ? 'medium' : 'hidden')
+  else if (e.key === 'Escape') setMapMode(isMobile.value ? 'hidden' : 'small')
 }
 
 onMounted(async () => {
+  isMobile.value = window.matchMedia('(max-width: 768px)').matches
+  if (isMobile.value) mapMode.value = 'hidden'
+
   const code = store.roomCode
   unsubs.push(onValue(dbRef(db, `rooms/${code}/meta`), (snap) => {
     const val = snap.val() as RoomMeta | null
@@ -233,7 +239,7 @@ onMounted(async () => {
 
   await nextTick()
   await initStreetView()
-  initMiniMap()
+  if (mapMode.value !== 'hidden') initMiniMap()
 
 
   watch(currentRoundData, (data) => {
@@ -272,10 +278,14 @@ watch(currentLocation, async (loc, oldLoc) => {
   await initStreetView()
 })
 
-function toggleMap() {
-  mapExpanded.value = !mapExpanded.value
+function setMapMode(mode: 'hidden' | 'small' | 'medium' | 'large') {
+  mapMode.value = mode
   playSound('transition')
-  setTimeout(() => leafletMap?.invalidateSize(), 400)
+  nextTick(() => {
+    if (mode !== 'hidden') initMiniMap()
+    ;(window as any).lucide?.createIcons()
+    setTimeout(() => leafletMap?.invalidateSize(), 320)
+  })
 }
 </script>
 
@@ -314,12 +324,28 @@ function toggleMap() {
     </div>
 
 
-    <div :class="['game__minimap', { 'game__minimap--expanded': mapExpanded }]">
-      <div class="minimap__header" @click="toggleMap">
+    <button v-if="mapMode === 'hidden'" class="minimap-fab" @click="setMapMode(isMobile ? 'large' : 'medium')" aria-label="Open guess map">
+      <i data-lucide="map" style="width: 22px; height: 22px;"></i>
+      <span v-if="hasGuess" class="minimap-fab__dot"></span>
+    </button>
+
+    <div v-else :class="['game__minimap', `game__minimap--${mapMode}`]">
+      <div class="minimap__header">
         <span class="minimap__title"><i data-lucide="map-pin" style="width: 16px; height: 16px;"></i> Place your guess</span>
-        <button class="minimap__toggle">
-          <i :data-lucide="mapExpanded ? 'chevron-down' : 'chevron-up'"></i>
-        </button>
+        <div class="minimap__tools">
+          <button class="minimap__tool" :class="{ 'minimap__tool--active': mapMode === 'small' }" title="Small map" @click="setMapMode('small')">
+            <i data-lucide="minimize-2"></i>
+          </button>
+          <button class="minimap__tool" :class="{ 'minimap__tool--active': mapMode === 'medium' }" title="Medium map" @click="setMapMode('medium')">
+            <i data-lucide="square"></i>
+          </button>
+          <button class="minimap__tool" :class="{ 'minimap__tool--active': mapMode === 'large' }" title="Large map" @click="setMapMode('large')">
+            <i data-lucide="maximize-2"></i>
+          </button>
+          <button class="minimap__tool" title="Close map" @click="setMapMode('hidden')">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
       </div>
       <div ref="miniMapDiv" class="minimap__map"></div>
       <div class="minimap__actions">
@@ -362,14 +388,24 @@ function toggleMap() {
 .hud-timer--pulse .hud-timer__value { animation: timerPulse 0.5s ease-in-out infinite; color: var(--destructive); }
 @keyframes timerPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.8; transform: scale(1.05); } }
 
-.game__minimap { position: absolute; bottom: 24px; right: 24px; z-index: 70; width: 280px; background-color: var(--card); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-.game__minimap--expanded { width: min(560px, calc(100vw - 48px)); }
-.minimap__header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; cursor: pointer; border-bottom: 1px solid var(--border); background-color: var(--secondary); }
+.minimap-fab { position: absolute; right: 24px; bottom: 24px; z-index: 72; width: 56px; height: 56px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--primary); color: var(--primary-foreground); border: 1px solid rgba(255,255,255,0.18); box-shadow: 0 18px 40px rgba(0,0,0,0.35); cursor: pointer; transition: transform 0.18s ease, box-shadow 0.18s ease; }
+.minimap-fab:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 22px 52px rgba(0,0,0,0.45); }
+.minimap-fab__dot { position: absolute; top: 8px; right: 8px; width: 12px; height: 12px; border-radius: 50%; background: #22c55e; border: 2px solid var(--primary-foreground); }
+
+.game__minimap { position: absolute; bottom: 24px; right: 24px; z-index: 70; background-color: rgba(9, 9, 11, 0.94); border: 1px solid rgba(255,255,255,0.14); border-radius: var(--radius-md); overflow: hidden; transition: width 0.28s cubic-bezier(0.16, 1, 0.3, 1), height 0.28s cubic-bezier(0.16, 1, 0.3, 1), transform 0.28s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 18px 52px rgba(0, 0, 0, 0.45); backdrop-filter: blur(16px); }
+.game__minimap--small { width: 220px; }
+.game__minimap--medium { width: 340px; }
+.game__minimap--large { width: min(620px, calc(100vw - 48px)); }
+.minimap__header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.7rem 0.85rem; border-bottom: 1px solid rgba(255,255,255,0.1); background: linear-gradient(180deg, rgba(39,39,42,0.96), rgba(24,24,27,0.94)); }
 .minimap__title { font-family: var(--font-sans); font-size: 0.875rem; color: var(--foreground); font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
-.minimap__toggle { background: var(--background); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--foreground); cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; transition: background-color 0.15s ease; }
-.minimap__toggle:hover { background-color: var(--accent); }
-.minimap__map { width: 100%; height: 220px; transition: height 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-.game__minimap--expanded .minimap__map { height: min(430px, calc(100vh - 220px)); }
+.minimap__tools { display: flex; align-items: center; gap: 0.25rem; }
+.minimap__tool { width: 30px; height: 30px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.06); color: var(--muted-foreground); border: 1px solid rgba(255,255,255,0.08); cursor: pointer; transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease; }
+.minimap__tool svg { width: 15px; height: 15px; }
+.minimap__tool:hover, .minimap__tool--active { background: rgba(255,255,255,0.15); color: var(--foreground); transform: translateY(-1px); }
+.minimap__map { width: 100%; height: 240px; transition: height 0.28s cubic-bezier(0.16, 1, 0.3, 1); background: #d9e7dd; }
+:deep(.guess-marker) { filter: drop-shadow(0 5px 12px rgba(0,0,0,0.45)); transition: r 0.18s ease, opacity 0.18s ease; }
+.game__minimap--small .minimap__map { height: 170px; }
+.game__minimap--large .minimap__map { height: min(480px, calc(100dvh - 210px)); }
 .minimap__actions { padding: 0.75rem 1rem; border-top: 1px solid var(--border); }
 .minimap__lock-btn { width: 100%; }
 .btn--locked { background-color: var(--secondary) !important; color: var(--muted-foreground) !important; border-color: var(--border) !important; cursor: default !important; opacity: 0.8 !important; box-shadow: none !important; }
@@ -381,8 +417,17 @@ function toggleMap() {
 
 @media (max-width: 768px) {
   .game__hud { padding: 1rem; }
-  .game__minimap { width: 180px; bottom: 16px; right: 16px; }
-  .game__minimap--expanded { width: calc(100vw - 32px); }
+  .minimap-fab { right: calc(16px + env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom)); width: 58px; height: 58px; }
+  .game__minimap { left: 0; right: 0; bottom: 0; width: 100%; border-radius: 18px 18px 0 0; border-left: 0; border-right: 0; border-bottom: 0; transform: translateY(0); }
+  .game__minimap--small,
+  .game__minimap--medium,
+  .game__minimap--large { width: 100%; }
+  .game__minimap--small .minimap__map,
+  .game__minimap--medium .minimap__map,
+  .game__minimap--large .minimap__map { height: min(58dvh, 430px); }
+  .minimap__header { padding: 0.85rem 1rem; }
+  .minimap__tools .minimap__tool:nth-child(1),
+  .minimap__tools .minimap__tool:nth-child(2) { display: none; }
   .hud-timer__value { font-size: 1.25rem; }
   .game__hint { display: none; }
 }

@@ -2,8 +2,9 @@
 
 
 export interface GeoLocation {
-  lat: number
-  lng: number
+  locationId?: string
+  lat?: number
+  lng?: number
   heading: number
   pitch: number
   zoom: number
@@ -11,6 +12,11 @@ export interface GeoLocation {
   panoUrl?: string
   mapillaryId?: string
   thumbnailUrl?: string
+  country?: string
+  region?: string
+  difficulty?: string
+  mapPackId?: string
+  revealed?: boolean
 }
 
 export interface PlayerData {
@@ -21,6 +27,9 @@ export interface PlayerData {
   totalScore: number
   photoURL?: string
   provider?: 'google' | 'guest'
+  ready?: boolean
+  connected?: boolean
+  lastSeen?: number
 }
 
 export interface GuessData {
@@ -38,12 +47,41 @@ export interface RoomMeta {
   createdAt: number
   winnerUid?: string
   winReason?: 'score' | 'solo'
+  mode?: 'private' | 'public' | 'quickPlay'
+  region?: string
+  difficulty?: string
+  mapPack?: string
 }
 
 export interface RoundData {
   startedAt: number
   expiresAt: number
   guesses: Record<string, GuessData>
+}
+
+export interface PlayerRoundResult {
+  uid: string
+  nickname: string
+  photoURL?: string
+  color: string
+  guessLat: number | null
+  guessLng: number | null
+  distanceMeters: number
+  score: number
+  noGuess: boolean
+}
+
+export interface RoundResultData {
+  roundIndex: number
+  locationId: string
+  imageId: string
+  answerLat: number
+  answerLng: number
+  country?: string
+  region?: string
+  label?: string
+  players: Record<string, PlayerRoundResult>
+  createdAt: number
 }
 
 export interface RoomData {
@@ -67,7 +105,27 @@ export interface GlobalLeaderboardEntry {
   lastPlayedAt: number
 }
 
-export type RoomStatus = 'waiting' | 'playing' | 'roundResults' | 'gameOver'
+export interface MatchmakingPreferences {
+  mode: 'duel' | 'party'
+  region: 'world' | 'asia' | 'europe' | 'americas' | 'oceania'
+  difficulty: 'mixed' | 'easy' | 'medium' | 'hard'
+  mapPack: 'world' | 'urban' | 'landmarks'
+  partyId?: string
+}
+
+export interface MatchmakingEntry {
+  uid: string
+  displayName: string
+  photoURL?: string
+  rating: number
+  partyId?: string
+  preferences: MatchmakingPreferences
+  joinedAt: object | number
+  status: 'queued' | 'matched' | 'cancelled'
+  matchedRoomId?: string
+}
+
+export type RoomStatus = 'waiting' | 'countdown' | 'playing' | 'roundResults' | 'gameOver'
 
 export type ScreenName = 'lobby' | 'waiting' | 'game' | 'roundResults' | 'finalResults'
 
