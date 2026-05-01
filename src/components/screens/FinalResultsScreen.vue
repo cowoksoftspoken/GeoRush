@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { store, isHost, sortedLeaderboard, resetStore, updateStats } from '../../store'
-import { auth, db, dbRef, onValue, resetRoom, leaveRoom, recordGameResult } from '../../firebase'
+import { auth, db, dbRef, onValue, leaveRoom, deleteRoom, recordGameResult } from '../../firebase'
 import type { Unsubscribe } from '../../firebase'
 import type { PlayerData, RoomMeta } from '../../types'
 import { globalToast } from '../../composables/useToast'
@@ -125,22 +125,16 @@ function initConfetti() {
 }
 
 
-async function handlePlayAgain() {
-  try {
-    await resetRoom(store.roomCode)
-    showToast('Room reset! Starting fresh.', 'success')
-  } catch (err) {
-    showToast(`Error: ${(err as Error).message}`, 'error')
-  }
-}
-
 async function handleBackToLobby() {
   try {
-    await leaveRoom(store.roomCode, store.myUid)
-  } catch {
-
+    if (isHost.value) {
+      await deleteRoom(store.roomCode)
+    } else {
+      await leaveRoom(store.roomCode, store.myUid)
+    }
+  } catch (err) {
+    console.error(err)
   }
-  resetStore()
 }
 
 async function maybeRecordGlobalLeaderboard() {
@@ -170,24 +164,26 @@ async function maybeRecordGlobalLeaderboard() {
 
 
 onMounted(() => {
-  // Update local persistent stats
-  const me = store.players[store.myUid]
-  if (me) {
-    const roundScores = Object.values(me.scores || {})
-    const totalPoints = me.totalScore
-    const bestScore = Math.max(...roundScores, 0)
-    
-    // Estimate distance based on score: 5000 = 0km, 0 = 2500km
-    const gameDistances = roundScores.map(score => Math.max((5000 - score) / 2, 0))
-    const totalDistance = gameDistances.reduce((a, b) => a + b, 0)
-    
-    updateStats({
-      gamesPlayed: store.stats.gamesPlayed + 1,
-      totalPoints: store.stats.totalPoints + totalPoints,
-      bestScore: Math.max(store.stats.bestScore, bestScore),
-      totalDistance: store.stats.totalDistance + totalDistance,
-      guessCount: store.stats.guessCount + roundScores.length
-    })
+  // Update local persistent stats only if not anonymous
+  if (!store.isAnonymous) {
+    const me = store.players[store.myUid]
+    if (me) {
+      const roundScores = Object.values(me.scores || {})
+      const totalPoints = me.totalScore
+      const bestScore = Math.max(...roundScores, 0)
+      
+      // Estimate distance based on score: 5000 = 0km, 0 = 2500km
+      const gameDistances = roundScores.map(score => Math.max((5000 - score) / 2, 0))
+      const totalDistance = gameDistances.reduce((a, b) => a + b, 0)
+      
+      updateStats({
+        gamesPlayed: store.stats.gamesPlayed + 1,
+        totalPoints: store.stats.totalPoints + totalPoints,
+        bestScore: Math.max(store.stats.bestScore, bestScore),
+        totalDistance: store.stats.totalDistance + totalDistance,
+        guessCount: store.stats.guessCount + roundScores.length
+      })
+    }
   }
 
   const code = store.roomCode
@@ -200,6 +196,8 @@ onMounted(() => {
       if (val.status === 'waiting') {
         store.screen = 'waiting'
       }
+    } else {
+      resetStore()
     }
   }))
 
@@ -323,10 +321,10 @@ function getPodiumEmoji(place: number): string {
 
 
       <div class="final__actions">
-        <button v-if="isHost" class="btn btn--primary btn--large" @click="handlePlayAgain">
-          <i data-lucide="refresh-ccw"></i> Play Again
+        <button v-if="isHost" class="btn btn--primary btn--large" @click="handleBackToLobby">
+          <i data-lucide="trash-2"></i> Delete Room & Return
         </button>
-        <button class="btn btn--secondary btn--large" @click="handleBackToLobby">
+        <button v-else class="btn btn--secondary btn--large" @click="handleBackToLobby">
           <i data-lucide="home"></i> Back to Lobby
         </button>
       </div>

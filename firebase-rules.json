@@ -3,7 +3,7 @@
     "rooms": {
       "$roomCode": {
         ".read": "auth != null",
-        ".write": "auth != null && ((!data.exists() && newData.child('meta').child('host').val() === auth.uid) || data.child('meta').child('host').val() === auth.uid)",
+        ".write": "auth != null && ((!data.exists() && newData.child('meta').child('host').val() === auth.uid) || data.child('meta').child('host').val() === auth.uid || (!newData.exists() && !data.child('players').exists()))",
         "meta": {
           ".write": "auth != null && (data.parent().child('host').val() === auth.uid || root.child('rooms').child($roomCode).child('meta').child('host').val() === auth.uid || (newData.child('winnerUid').val() === auth.uid && newData.child('winReason').val() === 'solo'))",
           ".validate": "newData.hasChildren(['host', 'status', 'currentRound', 'totalRounds', 'roundDurationSeconds', 'createdAt']) && newData.child('status').isString() && newData.child('currentRound').isNumber() && newData.child('totalRounds').isNumber() && newData.child('roundDurationSeconds').isNumber()"
@@ -70,13 +70,14 @@
       ".read": "auth != null",
       ".indexOn": ["status", "mode", "mapPackId", "difficulty", "region", "playerCount"],
       "$roomId": {
-        ".write": "auth != null && ((!data.exists() && newData.child('hostId').val() === auth.uid) || data.child('hostId').val() === auth.uid || (newData.child('status').val() === data.child('status').val() && newData.child('playerCount').isNumber()))",
+        ".write": "auth != null && ((!data.exists() && newData.child('hostId').val() === auth.uid) || data.child('hostId').val() === auth.uid || (newData.child('status').val() === data.child('status').val() && newData.child('playerCount').isNumber()) || !newData.exists())",
         ".validate": "newData.hasChildren(['status', 'playerCount', 'maxPlayers', 'mode', 'mapPackId', 'difficulty', 'region', 'hostId', 'createdAt']) && newData.child('playerCount').isNumber() && newData.child('playerCount').val() >= 0 && newData.child('playerCount').val() <= newData.child('maxPlayers').val() && newData.child('status').isString()"
       }
     },
     "results": {
       "$roomId": {
         ".read": "auth != null && root.child('rooms').child($roomId).child('players').child(auth.uid).exists()",
+        ".write": "auth != null && (!newData.exists() || root.child('rooms').child($roomId).child('meta').child('host').val() === auth.uid)",
         "$roundId": {
           ".read": "auth != null && root.child('rooms').child($roomId).child('players').child(auth.uid).exists()",
           ".write": "auth != null && root.child('rooms').child($roomId).child('meta').child('host').val() === auth.uid",

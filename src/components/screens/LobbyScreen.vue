@@ -7,7 +7,14 @@ import {
   quickJoinRoom,
   listenGlobalLeaderboard,
   signInWithGoogle,
+  signInAnon,
   signOutUser,
+  startGame,
+  leaveRoom,
+  get,
+  dbRef,
+  db,
+  onValue,
   type Unsubscribe
 } from '../../firebase'
 import { generateNickname } from '../../utils'
@@ -32,14 +39,16 @@ const leaderboard = ref<GlobalLeaderboardEntry[]>([])
 const matchmaking = ref<{
   open: boolean
   roomCode: string
-  status: 'idle' | 'queued' | 'matched' | 'error'
+  status: 'idle' | 'queued' | 'matched' | 'starting' | 'error'
   startedAt: number
+  countdown: number
   error: string
 }>({
   open: false,
   roomCode: '',
   status: 'idle',
   startedAt: 0,
+  countdown: 4,
   error: ''
 })
 const preferences = ref<MatchmakingPreferences>({
@@ -51,20 +60,16 @@ const preferences = ref<MatchmakingPreferences>({
 const queueSeconds = ref(0)
 let unsubscribeLeaderboard: Unsubscribe | null = null
 let queueTimer: ReturnType<typeof setInterval> | null = null
+let matchmakingCleanup: () => void = () => {}
 
 const isGoogleSignedIn = computed(() => Boolean(store.myUid && !store.isAnonymous))
 const displayName = computed(() => store.myNickname || 'Player')
 
 async function ensureAuth() {
-  if (!isGoogleSignedIn.value) {
-    const user = await signInWithGoogle()
+  if (!store.myUid) {
+    const user = await signInAnon()
     store.myUid = user.uid
-    store.myPhotoURL = user.photoURL ?? ''
-    store.myEmail = user.email ?? ''
-    store.isAnonymous = false
-    if (!nickname.value.trim() && user.displayName) {
-      nickname.value = user.displayName
-    }
+    store.isAnonymous = true
   }
   store.myNickname = nickname.value
   localStorage.setItem('georush_nickname', nickname.value)
@@ -165,6 +170,7 @@ async function handleQuickPlay() {
       roomCode: '',
       status: 'queued',
       startedAt: Date.now(),
+      countdown: 4,
       error: ''
     }
     queueSeconds.value = 0
@@ -179,13 +185,49 @@ async function handleQuickPlay() {
       store.myPhotoURL,
       preferences.value
     )
+    
+    const roomSnap = await get(dbRef(db, `rooms/${roomCode}/meta`))
+    const isHost = roomSnap.val()?.host === store.myUid
+
     matchmaking.value.status = 'matched'
     matchmaking.value.roomCode = roomCode
+    matchmaking.value.countdown = 4
     clearQueueTimer()
     store.roomCode = roomCode
-    setTimeout(() => {
-      store.screen = 'waiting'
-    }, 700)
+
+    let countdownInterval: ReturnType<typeof setInterval> | null = null
+    const unsubPlayers = onValue(dbRef(db, `rooms/${roomCode}/playerCount`), (snap) => {
+      const count = snap.val() || 1
+      if (count >= 2 && matchmaking.value.status !== 'starting') {
+        matchmaking.value.status = 'starting'
+        matchmaking.value.countdown = 4
+        countdownInterval = setInterval(() => {
+          matchmaking.value.countdown--
+          if (matchmaking.value.countdown <= 0) {
+            if (countdownInterval) clearInterval(countdownInterval)
+            if (isHost) startGame(roomCode).catch(console.error)
+          }
+        }, 1000)
+      } else if (count < 2 && matchmaking.value.status === 'starting') {
+        if (countdownInterval) clearInterval(countdownInterval)
+        matchmaking.value.status = 'matched'
+      }
+    })
+
+    const unsubMeta = onValue(dbRef(db, `rooms/${roomCode}/meta`), (snap) => {
+      const meta = snap.val()
+      if (meta?.status === 'playing') {
+        matchmakingCleanup()
+        matchmaking.value.open = false
+        store.screen = 'game'
+      }
+    })
+
+    matchmakingCleanup = () => {
+      unsubPlayers()
+      unsubMeta()
+      if (countdownInterval) clearInterval(countdownInterval)
+    }
   } catch (err) {
     clearQueueTimer()
     matchmaking.value.open = true
@@ -194,13 +236,22 @@ async function handleQuickPlay() {
   }
 }
 
-function handleCancelQueue(message = 'Matchmaking cancelled') {
+async function handleCancelQueue(message = 'Matchmaking cancelled') {
   clearQueueTimer()
+  matchmakingCleanup()
+  if (matchmaking.value.roomCode) {
+    try {
+      await leaveRoom(matchmaking.value.roomCode, store.myUid)
+    } catch (err) {
+      console.error('Failed to leave room:', err)
+    }
+  }
   matchmaking.value = {
     open: false,
     roomCode: '',
     status: 'idle',
     startedAt: 0,
+    countdown: 4,
     error: ''
   }
   showToast(message, 'info')
@@ -392,14 +443,15 @@ onUnmounted(() => {
                 <div v-if="matchmaking.open" class="matchmaking-modal">
                   <div class="matchmaking-modal__card">
                     <div class="matchmaking-modal__pulse"></div>
-                    <h3>{{ matchmaking.status === 'matched' ? 'Match found' : matchmaking.status === 'error' ? 'Matchmaking failed' : 'Finding players...' }}</h3>
+                    <h3>{{ matchmaking.status === 'starting' ? 'Game starting' : matchmaking.status === 'matched' ? 'Match found' : matchmaking.status === 'error' ? 'Matchmaking failed' : 'Finding players...' }}</h3>
                     <p v-if="matchmaking.status === 'queued'">
                       {{ preferences.region }} · {{ preferences.difficulty }} · {{ preferences.mapPack }}
                     </p>
-                    <p v-else-if="matchmaking.status === 'matched'">Moving you into the room.</p>
+                    <p v-else-if="matchmaking.status === 'starting'">Get ready in {{ matchmaking.countdown }}...</p>
+                    <p v-else-if="matchmaking.status === 'matched'">Waiting for more players...</p>
                     <p v-else>{{ matchmaking.error }}</p>
-                    <div class="matchmaking-modal__time">{{ queueSeconds }}s</div>
-                    <button v-if="matchmaking.status === 'queued'" class="btn btn--secondary" @click="handleCancelQueue()">Cancel Queue</button>
+                    <div v-if="matchmaking.status !== 'starting'" class="matchmaking-modal__time">{{ queueSeconds }}s</div>
+                    <button v-if="matchmaking.status === 'queued' || matchmaking.status === 'matched'" class="btn btn--secondary" @click="handleCancelQueue()">Cancel Queue</button>
                     <button v-if="matchmaking.status === 'error'" class="btn btn--primary" @click="matchmaking.open = false">Close</button>
                   </div>
                 </div>
@@ -553,7 +605,11 @@ onUnmounted(() => {
                 <div class="stats-column">
                   <div class="settings-section">
                     <h3 class="settings-title">Your Statistics</h3>
-                    <div class="stats-grid">
+                    <div v-if="store.isAnonymous" class="guest-warning">
+                      <i data-lucide="info" style="margin-right: 8px;"></i>
+                      Sign in with Google to track your statistics!
+                    </div>
+                    <div v-else class="stats-grid">
                       <div class="stat-card">
                         <span class="stat-label">Games Played</span>
                         <span class="stat-value">{{ store.stats.gamesPlayed }}</span>
@@ -575,7 +631,11 @@ onUnmounted(() => {
 
                   <div class="settings-section">
                     <h3 class="settings-title">Achievements</h3>
-                    <div class="achievements-list">
+                    <div v-if="store.isAnonymous" class="guest-warning">
+                      <i data-lucide="award" style="margin-right: 8px;"></i>
+                      Sign in with Google to unlock achievements!
+                    </div>
+                    <div v-else class="achievements-list">
                       <div 
                         v-for="ach in achievements" 
                         :key="ach.id"
@@ -642,53 +702,95 @@ onUnmounted(() => {
   position: relative;
   z-index: 10;
   display: flex;
+  flex-direction: column;
   width: 100%;
-  max-width: 1200px;
-  height: 80vh;
-  min-height: 600px;
-  background-color: rgba(9, 9, 11, 0.7);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  overflow: hidden;
+  height: 100vh;
+  background-color: transparent;
   animation: cardIn 0.3s ease-out;
 }
 
+@media (min-width: 860px) {
+  .dashboard {
+    flex-direction: row;
+  }
+}
+
 .dashboard__sidebar {
-  width: 280px;
-  background-color: rgba(39, 39, 42, 0.4);
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  width: 100%;
+  background-color: transparent;
   display: flex;
-  flex-direction: column;
-  padding: 2rem 1.5rem;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+@media (min-width: 860px) {
+  .dashboard__sidebar {
+    width: 320px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 3rem 2rem;
+    border-bottom: none;
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+  }
 }
 
 .sidebar__brand {
-  margin-bottom: 3rem;
+  margin-bottom: 0;
+}
+
+@media (min-width: 860px) {
+  .sidebar__brand {
+    margin-bottom: 3rem;
+  }
 }
 
 .sidebar__title {
   font-family: var(--font-sans);
   font-weight: 800;
-  font-size: 2rem;
+  font-size: 1.5rem;
   line-height: 1;
   color: var(--foreground);
   letter-spacing: -0.05em;
-  margin: 0 0 0.25rem;
+  margin: 0;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+}
+
+@media (min-width: 860px) {
+  .sidebar__title {
+    font-size: 3rem;
+  }
 }
 
 .sidebar__tagline {
+  display: none;
   font-family: var(--font-sans);
-  color: var(--muted-foreground);
-  font-size: 0.875rem;
-  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+
+@media (min-width: 860px) {
+  .sidebar__tagline {
+    display: block;
+    margin-top: 0.5rem;
+  }
 }
 
 .sidebar__nav {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 0.5rem;
+}
+
+@media (min-width: 860px) {
+  .sidebar__nav {
+    flex-direction: column;
+    width: 100%;
+    gap: 1rem;
+  }
 }
 
 .nav-item {
@@ -698,29 +800,39 @@ onUnmounted(() => {
   padding: 0.75rem 1rem;
   background: transparent;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-full);
   color: var(--muted-foreground);
   font-family: var(--font-sans);
   font-size: 1rem;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
   text-align: left;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+@media (min-width: 860px) {
+  .nav-item {
+    font-size: 1.125rem;
+    padding: 0.75rem 1.5rem;
+  }
 }
 
 .nav-item:hover {
   background-color: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
   color: var(--foreground);
 }
 
 .nav-item--active {
-  background-color: var(--primary);
-  color: var(--primary-foreground);
+  background-color: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
+  color: var(--foreground);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
 .nav-item--active:hover {
-  background-color: var(--primary);
-  color: var(--primary-foreground);
+  background-color: rgba(255, 255, 255, 0.2);
 }
 
 .nav-item__icon {
@@ -730,13 +842,29 @@ onUnmounted(() => {
 
 .dashboard__main {
   flex: 1;
-  padding: 1.5rem 2rem;
+  padding: 1.5rem;
   overflow-y: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+@media (min-width: 860px) {
+  .dashboard__main {
+    padding: 3rem;
+    align-items: center;
+    justify-content: flex-start;
+  }
 }
 
 .dashboard__content {
-  max-width: 900px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: 800px;
+  background-color: transparent;
+  backdrop-filter: none;
+  border: none;
+  padding: 0;
+  box-shadow: none;
 }
 
 .lobby__card {
@@ -808,6 +936,7 @@ onUnmounted(() => {
   font-weight: 500;
   color: var(--foreground);
   margin-bottom: 0.5rem;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
 }
 
 .lobby__input-row {
@@ -817,7 +946,7 @@ onUnmounted(() => {
 
 .lobby__input {
   flex: 1;
-  background-color: transparent;
+  background-color: rgba(9, 9, 11, 0.6);
   border: 1px solid var(--input);
   border-radius: var(--radius-md);
   padding: 0.5rem 0.75rem;
@@ -921,13 +1050,15 @@ onUnmounted(() => {
   font-size: 1.5rem;
   color: var(--foreground);
   margin: 0 0 0.25rem;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
 }
 
 .tab-subtitle {
   font-family: var(--font-sans);
-  color: var(--muted-foreground);
+  color: rgba(255, 255, 255, 0.9);
   font-size: 0.875rem;
   margin: 0;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.5);
 }
 
 /* PLAY TAB */
@@ -939,9 +1070,11 @@ onUnmounted(() => {
 
 .matchmaking-panel {
   padding: 1.25rem;
-  background: rgba(250, 250, 250, 0.06);
-  border: 1px solid rgba(250, 250, 250, 0.12);
+  background: rgba(9, 9, 11, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
 .matchmaking-panel__header {
@@ -1053,9 +1186,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 1rem;
   padding: 1.25rem;
-  background-color: rgba(39, 39, 42, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background-color: rgba(9, 9, 11, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -1295,6 +1430,20 @@ onUnmounted(() => {
   font-family: var(--font-sans);
   font-size: 0.7rem;
   color: var(--muted-foreground);
+}
+
+.guest-warning {
+  display: flex;
+  align-items: center;
+  padding: 1rem;
+  background-color: rgba(234, 179, 8, 0.15); /* amber tint */
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  border-radius: var(--radius-md);
+  color: rgba(253, 230, 138, 1);
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-top: 0.5rem;
 }
 
 /* TOGGLE SWITCH */
@@ -1559,8 +1708,8 @@ input:checked + .toggle-slider:before {
   .dashboard__sidebar {
     width: 100%;
     border-right: none;
-    border-bottom: 1px solid var(--border);
-    padding: 1rem 1.5rem;
+    border-bottom: none;
+    padding: 1rem 1.15rem 1rem 1.15rem;
   }
   .sidebar__brand {
     display: none;
@@ -1571,8 +1720,11 @@ input:checked + .toggle-slider:before {
     gap: 0.5rem;
   }
   .nav-item {
-    padding: 0.5rem 1rem;
+    padding: 0.5rem 0.6rem;
     font-size: 0.8rem;
+  }
+  .nav-item--active {
+    border-radius: 5px;
   }
   .dashboard__main {
     padding: 1rem;

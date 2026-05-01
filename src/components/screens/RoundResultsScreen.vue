@@ -35,7 +35,7 @@ function initResultsMap() {
     leafletMap = null
   }
   leafletMap = L.map(resultsMapDiv.value, { zoomControl: true, attributionControl: false }).setView([loc.answerLat, loc.answerLng], 3)
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(leafletMap)
+  L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(leafletMap)
 
 
   const starIcon = L.divIcon({ html: '<div style="color:#f5c842;filter:drop-shadow(0 0 4px rgba(245,200,66,0.6))"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-star"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>', className: '', iconSize: [24, 24], iconAnchor: [12, 12] })

@@ -201,7 +201,8 @@ async function handleLeave() {
           :class="myReady ? 'btn--secondary' : 'btn--primary'"
           @click="handleReadyToggle"
         >
-          <i :data-lucide="myReady ? 'check-circle-2' : 'circle'" style="width: 18px;"></i>
+          <span v-show="myReady"><i data-lucide="check-circle-2" style="width: 18px;"></i></span>
+          <span v-show="!myReady"><i data-lucide="circle" style="width: 18px;"></i></span>
           {{ myReady ? 'Ready' : 'Mark Ready' }}
         </button>
         <button

@@ -103,6 +103,14 @@ const MAX_PLAYERS = 6
 const TOTAL_ROUNDS = 5
 const ROUND_DURATION_SECONDS = 90
 
+let serverTimeOffset = 0
+onValue(dbRef(db, '.info/serverTimeOffset'), snap => {
+  serverTimeOffset = snap.val() || 0
+})
+export function getServerTime(): number {
+  return Date.now() + serverTimeOffset
+}
+
 export function signInAnon(): Promise<User> {
   return new Promise((resolve, reject) => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -420,7 +428,7 @@ export async function startGame(roomCode: string): Promise<void> {
   if (!meta) throw new Error('Room not found')
   if (meta.host !== auth.currentUser?.uid) throw new Error('Only the host can start the game')
 
-  const startedAt = Date.now()
+  const startedAt = getServerTime()
   const expiresAt = startedAt + meta.roundDurationSeconds * 1000
   const updates: Record<string, unknown> = {
     [`rooms/${roomCode}/meta/status`]: 'playing',
@@ -530,7 +538,7 @@ export async function advanceToNextRound(roomCode: string, nextRound: number, to
     return
   }
 
-  const startedAt = Date.now()
+  const startedAt = getServerTime()
   const expiresAt = startedAt + meta.roundDurationSeconds * 1000
   const updates: Record<string, unknown> = {
     [`rooms/${roomCode}/meta/status`]: 'playing',
@@ -589,37 +597,20 @@ export async function updatePlayerScore(
   })
 }
 
-export async function resetRoom(roomCode: string): Promise<void> {
+export async function deleteRoom(roomCode: string): Promise<void> {
   const roomSnap = await get(dbRef(db, `rooms/${roomCode}`))
-  if (!roomSnap.exists()) throw new Error('Room not found')
+  if (!roomSnap.exists()) return
 
   const room = roomSnap.val() as RoomData
-  if (room.meta.host !== auth.currentUser?.uid) throw new Error('Only the host can reset the room')
+  if (room.meta.host !== auth.currentUser?.uid) throw new Error('Only the host can delete the room')
 
-  const preferences: MatchmakingPreferences = {
-    mode: room.meta.mode === 'quickPlay' ? 'duel' : 'party',
-    region: (room.meta.region as MatchmakingPreferences['region']) || 'world',
-    difficulty: (room.meta.difficulty as MatchmakingPreferences['difficulty']) || 'mixed',
-    mapPack: (room.meta.mapPack as MatchmakingPreferences['mapPack']) || 'world'
-  }
-  const locations = await fetchPublicLocations(TOTAL_ROUNDS, preferences)
   const updates: Record<string, unknown> = {
-    [`rooms/${roomCode}/meta/status`]: 'waiting',
-    [`rooms/${roomCode}/meta/currentRound`]: 0,
-    [`rooms/${roomCode}/meta/winnerUid`]: null,
-    [`rooms/${roomCode}/meta/winReason`]: null,
-    [`rooms/${roomCode}/rounds`]: null,
-    [`rooms/${roomCode}/locations`]: Object.fromEntries(locations.map((location, index) => [index, location])),
+    [`rooms/${roomCode}`]: null,
     [`results/${roomCode}`]: null
   }
-  if (await publicRoomExists(roomCode)) updates[`publicRooms/${roomCode}/status`] = 'waiting'
-
-  for (const uid of Object.keys(room.players ?? {})) {
-    updates[`rooms/${roomCode}/players/${uid}/scores`] = {}
-    updates[`rooms/${roomCode}/players/${uid}/totalScore`] = 0
-    updates[`rooms/${roomCode}/players/${uid}/ready`] = false
+  if (await publicRoomExists(roomCode)) {
+    updates[`publicRooms/${roomCode}`] = null
   }
-
   await update(dbRef(db), updates)
 }
 
